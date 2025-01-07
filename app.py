@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, send_file, redirect, render_template, url_for
+from flask import Flask, request, jsonify, send_file, redirect, render_template, url_for, session
 from werkzeug.utils import secure_filename
 import cv2
 import numpy as np
@@ -14,10 +14,12 @@ import hmac
 import hashlib
 import base64
 import json
+import secrets
 
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = secrets.token_hex(16)
 CORS(app)
 
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -100,27 +102,39 @@ def install(shop_url=None):
     if not shop_url:
         return 'Shop parameter is required', 400
     
-    state = base64.b64encode(os.urandom(16)).decode('utf-8')
+    # Nonce oluştur ve session'a kaydet
+    nonce = secrets.token_hex(16)
+    session['nonce'] = nonce
+    session['shop'] = shop_url
+    
     redirect_uri = f"{APP_URL}/oauth/callback"
     
     # Shopify OAuth URL'sini oluştur
-    install_url = f"https://{shop_url}/admin/oauth/authorize?client_id={SHOPIFY_API_KEY}&scope={SHOPIFY_SCOPE}&redirect_uri={redirect_uri}&state={state}"
+    install_url = (
+        f"https://{shop_url}/admin/oauth/authorize?"
+        f"client_id={SHOPIFY_API_KEY}&"
+        f"scope={SHOPIFY_SCOPE}&"
+        f"redirect_uri={redirect_uri}&"
+        f"state={nonce}"
+    )
     
     return redirect(install_url)
 
 @app.route('/oauth/callback')
 def oauth_callback():
     """Shopify OAuth callback endpoint'i"""
-    # HMAC doğrulaması
-    if not verify_request():
-        return 'Invalid signature', 400
+    # Nonce kontrolü
+    state = request.args.get('state')
+    if not state or state != session.get('nonce'):
+        return 'Invalid state parameter', 400
     
     shop_url = request.args.get('shop')
-    code = request.args.get('code')
-    state = request.args.get('state')
+    if shop_url != session.get('shop'):
+        return 'Invalid shop parameter', 400
     
-    if not shop_url or not code:
-        return 'Missing required parameters', 400
+    code = request.args.get('code')
+    if not code:
+        return 'Missing code parameter', 400
     
     try:
         # Access token'ı al
@@ -136,13 +150,15 @@ def oauth_callback():
             data = response.json()
             access_token = data.get('access_token')
             
-            # Burada token'ı güvenli bir şekilde saklamalısınız
+            # Token'ı session'a kaydet
+            session['access_token'] = access_token
             
             # Kullanıcıyı uygulamaya yönlendir
             app_url = f"https://{shop_url}/admin/apps/imagecraft"
             return redirect(app_url)
         else:
-            return 'Installation failed: ' + response.text, 400
+            app.logger.error(f"Token request failed: {response.text}")
+            return 'Installation failed: Invalid response from Shopify', 400
             
     except Exception as e:
         app.logger.error(f"OAuth error: {str(e)}")
