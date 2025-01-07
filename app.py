@@ -15,12 +15,17 @@ import hashlib
 import base64
 import json
 import secrets
+from flask_session import Session
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 CORS(app)
+
+# Session ayarları
+app.config['SESSION_TYPE'] = 'filesystem'
+Session(app)
 
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -32,9 +37,24 @@ SHOPIFY_API_SECRET = os.getenv('SHOPIFY_API_SECRET')
 SHOPIFY_SCOPE = 'write_products,write_files'
 APP_URL = 'https://imagecraft-6430.onrender.com'
 
+# Debug modunu aktifleştir
+app.debug = True
+
 # Klasörleri oluştur
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PROCESSED_FOLDER'], exist_ok=True)
+os.makedirs('flask_session', exist_ok=True)  # Session dosyaları için klasör
+
+@app.route('/debug')
+def debug():
+    """Debug endpoint'i"""
+    return jsonify({
+        'session': dict(session),
+        'env': {
+            'SHOPIFY_API_KEY': SHOPIFY_API_KEY,
+            'APP_URL': APP_URL
+        }
+    })
 
 def verify_webhook(data, hmac_header):
     digest = hmac.new(SHOPIFY_API_SECRET.encode('utf-8'), data, hashlib.sha256).digest()
