@@ -16,6 +16,11 @@ import base64
 import json
 import secrets
 from flask_session import Session
+import logging
+
+# Logging ayarları
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -52,21 +57,23 @@ def debug():
         'session': dict(session),
         'env': {
             'SHOPIFY_API_KEY': SHOPIFY_API_KEY,
-            'APP_URL': APP_URL
+            'APP_URL': APP_URL,
+            'SHOPIFY_SCOPE': SHOPIFY_SCOPE
+        },
+        'request': {
+            'args': dict(request.args),
+            'headers': dict(request.headers)
         }
     })
-
-def verify_webhook(data, hmac_header):
-    digest = hmac.new(SHOPIFY_API_SECRET.encode('utf-8'), data, hashlib.sha256).digest()
-    computed_hmac = base64.b64encode(digest).decode('utf-8')
-    return hmac.compare_digest(computed_hmac, hmac_header)
 
 @app.route('/')
 def index():
     """Ana sayfa"""
     shop = request.args.get('shop')
     if shop:
+        logger.debug(f"Shop parameter received: {shop}")
         return install(shop)
+    logger.debug("No shop parameter, rendering index.html")
     return render_template('index.html')
 
 def allowed_file(filename):
@@ -117,13 +124,20 @@ def verify_request():
 @app.route('/install')
 def install(shop_url=None):
     """Shopify uygulaması kurulum endpoint'i"""
+    logger.debug(f"Install endpoint called with shop_url: {shop_url}")
+    
     if not shop_url:
         shop_url = request.args.get('shop')
     if not shop_url:
+        logger.error("No shop parameter provided")
         return 'Shop parameter is required', 400
     
-    # Nonce oluştur ve session'a kaydet
+    # Nonce oluştur
     nonce = secrets.token_hex(16)
+    logger.debug(f"Generated nonce: {nonce}")
+    
+    # Session'ı temizle ve yeni değerleri kaydet
+    session.clear()
     session['nonce'] = nonce
     session['shop'] = shop_url
     
@@ -138,22 +152,30 @@ def install(shop_url=None):
         f"state={nonce}"
     )
     
+    logger.debug(f"Redirecting to Shopify OAuth URL: {install_url}")
     return redirect(install_url)
 
 @app.route('/oauth/callback')
 def oauth_callback():
     """Shopify OAuth callback endpoint'i"""
+    logger.debug("OAuth callback received")
+    logger.debug(f"Request args: {dict(request.args)}")
+    logger.debug(f"Session data: {dict(session)}")
+    
     # Nonce kontrolü
     state = request.args.get('state')
     if not state or state != session.get('nonce'):
+        logger.error(f"Invalid state. Received: {state}, Expected: {session.get('nonce')}")
         return 'Invalid state parameter', 400
     
     shop_url = request.args.get('shop')
     if shop_url != session.get('shop'):
+        logger.error(f"Invalid shop. Received: {shop_url}, Expected: {session.get('shop')}")
         return 'Invalid shop parameter', 400
     
     code = request.args.get('code')
     if not code:
+        logger.error("Missing code parameter")
         return 'Missing code parameter', 400
     
     try:
@@ -165,8 +187,9 @@ def oauth_callback():
             'code': code
         })
         
+        logger.debug(f"Token request response: {response.text}")
+        
         if response.ok:
-            # Token'ı kaydet ve kullanıcıyı uygulamaya yönlendir
             data = response.json()
             access_token = data.get('access_token')
             
@@ -175,13 +198,14 @@ def oauth_callback():
             
             # Kullanıcıyı uygulamaya yönlendir
             app_url = f"https://{shop_url}/admin/apps/imagecraft"
+            logger.debug(f"Redirecting to app URL: {app_url}")
             return redirect(app_url)
         else:
-            app.logger.error(f"Token request failed: {response.text}")
+            logger.error(f"Token request failed: {response.text}")
             return 'Installation failed: Invalid response from Shopify', 400
             
     except Exception as e:
-        app.logger.error(f"OAuth error: {str(e)}")
+        logger.error(f"OAuth error: {str(e)}")
         return f'Installation failed: {str(e)}', 400
 
 @app.route('/process', methods=['POST'])
