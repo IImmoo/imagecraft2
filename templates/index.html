@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logo Kaldırma Uygulaması</title>
+    <link href="https://cdn.shopify.com/shopifycloud/web/assets/v1/latest/polaris.css" rel="stylesheet">
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .preview {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+        .preview img {
+            max-width: 45%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="Polaris-Card">
+            <div class="Polaris-Card__Header">
+                <h1 class="Polaris-Heading">Logo Kaldırma Uygulaması</h1>
+            </div>
+            <div class="Polaris-Card__Section">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="Polaris-FormLayout">
+                        <div class="Polaris-FormLayout__Item">
+                            <div class="Polaris-DropZone">
+                                <input type="file" id="imageInput" accept="image/*" class="Polaris-DropZone__Input">
+                                <span class="Polaris-TextStyle--variationSubdued">
+                                    Fotoğraf seçmek için tıklayın veya sürükleyin
+                                </span>
+                            </div>
+                        </div>
+                        <div class="Polaris-FormLayout__Item">
+                            <button type="submit" class="Polaris-Button Polaris-Button--primary">
+                                <span class="Polaris-Button__Content">
+                                    <span>Logoyu Kaldır</span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </form>
+                
+                <div class="preview">
+                    <div>
+                        <h3 class="Polaris-Subheading">Orijinal Görüntü</h3>
+                        <img id="originalPreview">
+                    </div>
+                    <div>
+                        <h3 class="Polaris-Subheading">İşlenmiş Görüntü</h3>
+                        <img id="processedPreview">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('imageInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Lütfen bir fotoğraf seçin');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    document.getElementById('originalPreview').src = URL.createObjectURL(file);
+                    document.getElementById('processedPreview').src = URL.createObjectURL(blob);
+                } else {
+                    alert('Görüntü işlenirken bir hata oluştu');
+                }
+            } catch (error) {
+                console.error('Hata:', error);
+                alert('Bir hata oluştu');
+            }
+        });
+        
+        // Görüntü önizleme
+        document.getElementById('imageInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                document.getElementById('originalPreview').src = URL.createObjectURL(file);
+            }
+        });
+    </script>
+</body>
+</html> 

@@ -1,0 +1,22 @@
+name = "ImageCraft"
+client_id = "${SHOPIFY_API_KEY}"
+application_url = "https://imagecraft-c87032a6590b.herokuapp.com"
+embedded = true
+
+[access_scopes]
+# Uygulama için gerekli izinler
+scopes = "write_products,write_files,read_products,read_files"
+
+[auth]
+redirect_urls = [
+    "https://imagecraft-c87032a6590b.herokuapp.com/oauth/callback"
+]
+
+[webhooks]
+api_version = "2024-01"
+
+[pos]
+embedded = false
+
+[build]
+automatically_update_urls_on_dev = true 
