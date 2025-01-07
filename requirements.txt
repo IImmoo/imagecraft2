@@ -10,4 +10,6 @@ Werkzeug==2.0.1
 gunicorn==20.1.0
 click==8.0.4
 flask-cors==4.0.0
-onnxruntime-gpu==1.15.1 
+onnxruntime==1.15.1
+torch==1.13.1
+torchvision==0.14.1 
