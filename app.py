@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, send_file, redirect, render_template, url_for, session
+from flask import Flask, request, jsonify, send_file, redirect, render_template, url_for, session, make_response
 from werkzeug.utils import secure_filename
 import cv2
 import numpy as np
@@ -25,11 +25,13 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(16)
+app.secret_key = os.getenv('SHOPIFY_API_SECRET', 'your-secret-key')
 CORS(app)
 
 # Session ayarları
 app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_PERMANENT'] = False
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 saat
 Session(app)
 
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -53,18 +55,23 @@ os.makedirs('flask_session', exist_ok=True)  # Session dosyaları için klasör
 @app.route('/debug')
 def debug():
     """Debug endpoint'i"""
-    return jsonify({
-        'session': dict(session),
-        'env': {
-            'SHOPIFY_API_KEY': SHOPIFY_API_KEY,
-            'APP_URL': APP_URL,
-            'SHOPIFY_SCOPE': SHOPIFY_SCOPE
-        },
-        'request': {
-            'args': dict(request.args),
-            'headers': dict(request.headers)
+    try:
+        response_data = {
+            'session': dict(session),
+            'env': {
+                'SHOPIFY_API_KEY': SHOPIFY_API_KEY,
+                'APP_URL': APP_URL,
+                'SHOPIFY_SCOPE': SHOPIFY_SCOPE
+            },
+            'request': {
+                'args': dict(request.args),
+                'headers': dict(request.headers)
+            }
         }
-    })
+        return jsonify(response_data)
+    except Exception as e:
+        logger.error(f"Debug endpoint error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/')
 def index():
@@ -141,6 +148,9 @@ def install(shop_url=None):
     session['nonce'] = nonce
     session['shop'] = shop_url
     
+    # Session'ı kaydet
+    session.modified = True
+    
     redirect_uri = f"{APP_URL}/oauth/callback"
     
     # Shopify OAuth URL'sini oluştur
@@ -153,7 +163,10 @@ def install(shop_url=None):
     )
     
     logger.debug(f"Redirecting to Shopify OAuth URL: {install_url}")
-    return redirect(install_url)
+    response = make_response(redirect(install_url))
+    response.set_cookie('nonce', nonce)
+    response.set_cookie('shop', shop_url)
+    return response
 
 @app.route('/oauth/callback')
 def oauth_callback():
@@ -161,16 +174,19 @@ def oauth_callback():
     logger.debug("OAuth callback received")
     logger.debug(f"Request args: {dict(request.args)}")
     logger.debug(f"Session data: {dict(session)}")
+    logger.debug(f"Cookies: {request.cookies}")
     
     # Nonce kontrolü
     state = request.args.get('state')
-    if not state or state != session.get('nonce'):
-        logger.error(f"Invalid state. Received: {state}, Expected: {session.get('nonce')}")
+    nonce = request.cookies.get('nonce')
+    if not state or state != nonce:
+        logger.error(f"Invalid state. Received: {state}, Expected: {nonce}")
         return 'Invalid state parameter', 400
     
     shop_url = request.args.get('shop')
-    if shop_url != session.get('shop'):
-        logger.error(f"Invalid shop. Received: {shop_url}, Expected: {session.get('shop')}")
+    stored_shop = request.cookies.get('shop')
+    if shop_url != stored_shop:
+        logger.error(f"Invalid shop. Received: {shop_url}, Expected: {stored_shop}")
         return 'Invalid shop parameter', 400
     
     code = request.args.get('code')
@@ -195,6 +211,7 @@ def oauth_callback():
             
             # Token'ı session'a kaydet
             session['access_token'] = access_token
+            session.modified = True
             
             # Kullanıcıyı uygulamaya yönlendir
             app_url = f"https://{shop_url}/admin/apps/imagecraft"
