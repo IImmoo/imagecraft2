@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, redirect
 from werkzeug.utils import secure_filename
 import cv2
 import numpy as np
@@ -8,10 +8,14 @@ from PIL import Image
 import io
 import shopify
 from dotenv import load_dotenv
+from flask_cors import CORS
+import requests
 
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app)
+
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['PROCESSED_FOLDER'] = 'processed'
@@ -25,27 +29,41 @@ SHOPIFY_SCOPE = 'write_products,write_files'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PROCESSED_FOLDER'], exist_ok=True)
 
+@app.route('/')
+def index():
+    """Ana sayfa"""
+    shop = request.args.get('shop')
+    if shop:
+        return redirect(f"/install?shop={shop}")
+    return 'ImageCraft: Logo Removal App'
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'gif'}
 
 def process_image(image_path):
-    # Görüntüyü yükle
-    img = cv2.imread(image_path)
-    
-    # Logo kaldırma işlemi
-    output = remove(img)
-    
-    # Alfa kanalını kaldır ve beyaz arka plan ekle
-    if output.shape[2] == 4:  # RGBA format
-        alpha = output[:, :, 3] / 255.0
-        output_rgb = output[:, :, :3]
-        white_bg = np.ones_like(output_rgb) * 255
-        output_final = (alpha[:, :, np.newaxis] * output_rgb + 
-                       (1 - alpha[:, :, np.newaxis]) * white_bg).astype(np.uint8)
-    else:
-        output_final = output
-    
-    return output_final
+    try:
+        # Görüntüyü yükle
+        img = cv2.imread(image_path)
+        if img is None:
+            raise ValueError("Image could not be loaded")
+        
+        # Logo kaldırma işlemi
+        output = remove(img)
+        
+        # Alfa kanalını kaldır ve beyaz arka plan ekle
+        if output.shape[2] == 4:  # RGBA format
+            alpha = output[:, :, 3] / 255.0
+            output_rgb = output[:, :, :3]
+            white_bg = np.ones_like(output_rgb) * 255
+            output_final = (alpha[:, :, np.newaxis] * output_rgb + 
+                          (1 - alpha[:, :, np.newaxis]) * white_bg).astype(np.uint8)
+        else:
+            output_final = output
+        
+        return output_final
+    except Exception as e:
+        app.logger.error(f"Error processing image: {str(e)}")
+        raise
 
 @app.route('/install')
 def install():
@@ -58,10 +76,7 @@ def install():
     redirect_uri = request.url_root + 'oauth/callback'
     
     # Shopify OAuth URL'sini oluştur
-    install_url = shopify.Session(shop_url, SHOPIFY_SCOPE).create_permission_url(
-        scope=SHOPIFY_SCOPE,
-        redirect_uri=redirect_uri
-    )
+    install_url = f"{auth_url}?client_id={SHOPIFY_API_KEY}&scope={SHOPIFY_SCOPE}&redirect_uri={redirect_uri}"
     
     return redirect(install_url)
 
@@ -72,13 +87,21 @@ def oauth_callback():
     shop_url = request.args.get('shop')
     code = request.args.get('code')
     
-    session = shopify.Session(shop_url, SHOPIFY_SCOPE)
-    access_token = session.request_token(code)
+    if not shop_url or not code:
+        return 'Missing required parameters', 400
     
-    # Token'ı kaydet (gerçek uygulamada güvenli bir şekilde saklanmalı)
-    # ...
+    # Access token'ı al
+    access_token_url = f"https://{shop_url}/admin/oauth/access_token"
+    response = requests.post(access_token_url, data={
+        'client_id': SHOPIFY_API_KEY,
+        'client_secret': SHOPIFY_API_SECRET,
+        'code': code
+    })
     
-    return 'Installation successful!'
+    if response.ok:
+        return 'Installation successful!'
+    else:
+        return 'Installation failed', 400
 
 @app.route('/process', methods=['POST'])
 def process():
@@ -111,6 +134,7 @@ def process():
         return send_file(output_path, mimetype='image/png')
         
     except Exception as e:
+        app.logger.error(f"Error: {str(e)}")
         return jsonify({'error': str(e)}), 500
     
     finally:
@@ -121,4 +145,5 @@ def process():
             os.remove(output_path)
 
 if __name__ == '__main__':
-    app.run(debug=True) 
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port) 
