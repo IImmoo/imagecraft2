@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, send_file, redirect
+from flask import Flask, request, jsonify, send_file, redirect, render_template
 from werkzeug.utils import secure_filename
 import cv2
 import numpy as np
@@ -35,7 +35,7 @@ def index():
     shop = request.args.get('shop')
     if shop:
         return redirect(f"/install?shop={shop}")
-    return 'ImageCraft: Logo Removal App'
+    return render_template('index.html')
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'gif'}
@@ -90,18 +90,31 @@ def oauth_callback():
     if not shop_url or not code:
         return 'Missing required parameters', 400
     
-    # Access token'ı al
-    access_token_url = f"https://{shop_url}/admin/oauth/access_token"
-    response = requests.post(access_token_url, data={
-        'client_id': SHOPIFY_API_KEY,
-        'client_secret': SHOPIFY_API_SECRET,
-        'code': code
-    })
-    
-    if response.ok:
-        return 'Installation successful!'
-    else:
-        return 'Installation failed', 400
+    try:
+        # Access token'ı al
+        access_token_url = f"https://{shop_url}/admin/oauth/access_token"
+        response = requests.post(access_token_url, data={
+            'client_id': SHOPIFY_API_KEY,
+            'client_secret': SHOPIFY_API_SECRET,
+            'code': code
+        })
+        
+        if response.ok:
+            # Token'ı kaydet ve kullanıcıyı uygulamaya yönlendir
+            data = response.json()
+            access_token = data.get('access_token')
+            
+            # Burada token'ı güvenli bir şekilde saklamalısınız
+            
+            # Kullanıcıyı uygulamaya yönlendir
+            app_url = f"https://{shop_url}/admin/apps/imagecraft"
+            return redirect(app_url)
+        else:
+            return 'Installation failed: ' + response.text, 400
+            
+    except Exception as e:
+        app.logger.error(f"OAuth error: {str(e)}")
+        return f'Installation failed: {str(e)}', 400
 
 @app.route('/process', methods=['POST'])
 def process():
