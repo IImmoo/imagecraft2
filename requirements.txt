@@ -7,5 +7,5 @@ Werkzeug==2.0.1
 opencv-python-headless==4.5.3.56
 numpy==1.19.5
 Pillow==8.3.1
-rembg==2.0.30
+rembg==1.4.0
 Flask-Session==0.4.0 
