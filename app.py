@@ -164,8 +164,8 @@ def install(shop_url=None):
     
     logger.debug(f"Redirecting to Shopify OAuth URL: {install_url}")
     response = make_response(redirect(install_url))
-    response.set_cookie('nonce', nonce)
-    response.set_cookie('shop', shop_url)
+    response.set_cookie('nonce', nonce, secure=True, httponly=True, samesite='None')
+    response.set_cookie('shop', shop_url, secure=True, httponly=True, samesite='None')
     return response
 
 @app.route('/oauth/callback')
@@ -214,7 +214,7 @@ def oauth_callback():
             session.modified = True
             
             # Kullanıcıyı uygulamaya yönlendir
-            app_url = f"https://{shop_url}/admin/apps/imagecraft"
+            app_url = f"https://{shop_url}/admin/apps/{SHOPIFY_API_KEY}"
             logger.debug(f"Redirecting to app URL: {app_url}")
             return redirect(app_url)
         else:
